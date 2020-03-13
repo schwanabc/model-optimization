@@ -16,13 +16,12 @@
 """Train a simple convnet on the MNIST dataset."""
 from __future__ import print_function
 
-import tempfile
-
 from absl import app as absl_app
 from absl import flags
 
 import tensorflow as tf
 
+from tensorflow.python.keras.saving import save
 from tensorflow_model_optimization.python.core.sparsity.keras import prune
 from tensorflow_model_optimization.python.core.sparsity.keras import pruning_callbacks
 from tensorflow_model_optimization.python.core.sparsity.keras import pruning_schedule
@@ -37,7 +36,6 @@ batch_size = 128
 num_classes = 10
 epochs = 12
 
-flags.DEFINE_boolean('enable_eager', True, 'Trains in eager mode.')
 flags.DEFINE_string('output_dir', '/tmp/mnist_train/',
                     'Output directory to hold tensorboard events')
 
@@ -122,11 +120,11 @@ def train_and_save(models, x_train, y_train, x_test, y_test):
     print('Test accuracy:', score[1])
 
     # Export and import the model. Check that accuracy persists.
-    _, keras_file = tempfile.mkstemp('.h5')
-    print('Saving model to: ', keras_file)
-    keras.models.save_model(model, keras_file)
-    with prune.prune_scope():
-      loaded_model = keras.models.load_model(keras_file)
+    saved_model_dir = '/tmp/saved_model'
+    print('Saving model to: ', saved_model_dir)
+    save.save_model(model, saved_model_dir, save_format='tf')
+    print('Loading model from: ', saved_model_dir)
+    loaded_model = save.load_model(saved_model_dir)
 
     score = loaded_model.evaluate(x_test, y_test, verbose=0)
     print('Test loss:', score[0])
@@ -134,10 +132,6 @@ def train_and_save(models, x_train, y_train, x_test, y_test):
 
 
 def main(unused_argv):
-  if FLAGS.enable_eager:
-    print('Running in Eager mode.')
-    tf.enable_eager_execution()
-
   # input image dimensions
   img_rows, img_cols = 28, 28
 
