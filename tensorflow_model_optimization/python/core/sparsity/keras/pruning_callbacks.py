@@ -47,13 +47,23 @@ class UpdatePruningStep(callbacks.Callback):
 
   def on_train_batch_begin(self, batch, logs=None):
     tuples = []
-    for layer in self.model.layers:
-      # TODO(pulkitb): There's a possibility that the layer is a wrapper which
-      # internally contains Prune. This should account for that. Else Prune
-      # wrappers will throw errors.
-      if isinstance(layer, pruning_wrapper.PruneLowMagnitude):
-        # Assign iteration count from the optimizer to the layer pruning_step.
-        tuples.append((layer.pruning_step, self.step))
+
+    def _collect_prunable_layers(model):
+      """Collect the pruning_step attribute of all the prunable layers."""
+      if hasattr(model, 'layers'):
+        for layer in model.layers:
+          # A keras model may have other models as layers.
+          if isinstance(layer, tf.keras.Model):
+            _collect_prunable_layers(layer)
+          # TODO(pulkitb): There's a possibility that the layer is a wrapper
+          # which internally contains Prune. This should account for that.
+          # Else Prune wrappers will throw errors.
+          if isinstance(layer, pruning_wrapper.PruneLowMagnitude):
+            # Assign iteration count from the optimizer to the layer's
+            # pruning_step.
+            tuples.append((layer.pruning_step, self.step))
+
+    _collect_prunable_layers(self.model)
 
     K.batch_set_value(tuples)
     self.step = self.step + 1
@@ -96,12 +106,17 @@ class PruningSummaries(callbacks.TensorBoard):
 
     pruning_logs = {}
     params = []
-    layers = self.model.layers
-    for layer in layers:
-      if isinstance(layer, pruning_wrapper.PruneLowMagnitude):
-        for _, mask, threshold in layer.pruning_vars:
-          params.append(mask)
-          params.append(threshold)
+    def _collect_prunable_layers(model):
+      if hasattr(model, 'layers'):
+        for layer in model.layers:
+          if isinstance(layer, tf.keras.Model):
+            _collect_prunable_layers(layer)
+          if isinstance(layer, pruning_wrapper.PruneLowMagnitude):
+            for _, mask, threshold in layer.pruning_vars:
+              params.append(mask)
+              params.append(threshold)
+
+    _collect_prunable_layers(self.model)
     params.append(self.model.optimizer.iterations)
 
     values = K.batch_get_value(params)
